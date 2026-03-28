@@ -1,0 +1,684 @@
+\documentclass[12pt,a4paper]{article}
+
+\usepackage[T2A]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[russian]{babel}
+\usepackage{amsmath, amssymb}
+\usepackage{geometry}
+\usepackage{tikz}
+\usepackage{xcolor}
+\usepackage{booktabs}
+
+\usetikzlibrary{
+  arrows.meta, positioning, shapes.geometric,
+  fit, backgrounds, calc,
+  decorations.pathreplacing
+}
+
+\geometry{top=1.5cm, bottom=1.5cm, left=1.8cm, right=1.8cm}
+
+% ── Colors ──
+\definecolor{tokblue}  {RGB}{173,216,230}
+\definecolor{hidgreen} {RGB}{180,240,180}
+\definecolor{outred}   {RGB}{255,200,200}
+\definecolor{warnamber}{RGB}{255,220,150}
+\definecolor{normpur}  {RGB}{220,200,255}
+\definecolor{projcyan} {RGB}{180,230,230}
+\definecolor{lossred}  {RGB}{240,128,128}
+\definecolor{textcol}  {RGB}{255,228,196}
+\definecolor{simgreen} {RGB}{144,238,144}
+\definecolor{darkbg}   {RGB}{26,26,46}
+
+\pagestyle{empty}
+
+\begin{document}
+
+\begin{center}
+{\LARGE\bfseries Архитектуры ZSL/FSL: все схемы}\\[0.3em]
+{\small Приложение к учебному гайду}
+\end{center}
+
+\bigskip
+
+% ================================================================
+%  СХЕМА 1: DeViSE
+% ================================================================
+\section*{Схема 1. DeViSE (Frome et al., NeurIPS 2013)}
+
+Проекция CNN-признаков в пространство Word2Vec через обучаемую линейную трансформацию.
+
+\begin{center}
+\begin{tikzpicture}[
+  block/.style={rectangle, draw, rounded corners=3pt,
+                minimum height=0.9cm, text centered, font=\small, thick,
+                text width=2.4cm, align=center},
+  arr/.style={-{Stealth[length=6pt]}, thick},
+  dim/.style={font=\scriptsize, color=gray},
+]
+
+% Image path
+\node[block, fill=tokblue, minimum width=2cm] (img) at (0, 0) {Изображение\\$224\times224$};
+\node[block, fill=hidgreen, minimum width=2.2cm] (cnn) at (3, 0) {CNN\\(AlexNet)};
+\node[dim, below=0.1cm of cnn] {4096-dim};
+\node[block, fill=warnamber, minimum width=2.2cm] (proj) at (6.2, 0) {Линейная\\проекция $M$};
+\node[block, fill=projcyan, minimum width=2cm] (ve) at (9.2, 0) {Визуальный\\эмбеддинг};
+\node[dim, below=0.1cm of ve] {500-dim};
+
+\draw[arr] (img) -- (cnn);
+\draw[arr] (cnn) -- (proj);
+\draw[arr] (proj) -- (ve);
+
+% Text path
+\node[block, fill=textcol, minimum width=2.2cm] (word) at (6.2, -2.5) {Word2Vec\\(Skip-gram)};
+\node[block, fill=projcyan, minimum width=2cm] (te) at (9.2, -2.5) {Семантический\\эмбеддинг};
+\node[dim, below=0.1cm of te] {500-dim};
+
+\node[font=\small, anchor=west] at (3.5, -2.5) {Название класса <<cat>>};
+\draw[arr] (4.9, -2.5) -- (word);
+\draw[arr] (word) -- (te);
+
+% Similarity
+\node[block, fill=simgreen, minimum width=2cm] (sim) at (12, -1.25) {Hinge\\Rank Loss};
+\draw[arr] (ve.east) -- ++(0.5,0) |- (sim.west);
+\draw[arr] (te.east) -- ++(0.5,0) |- (sim.west);
+
+% Annotation
+\node[font=\scriptsize, color=gray, text width=4cm, align=center] at (12, -2.8)
+  {Правильный класс ближе\\к изображению, чем неправильные\\(с отступом $\Delta = 0.1$)};
+
+\end{tikzpicture}
+\end{center}
+
+\[
+L = \sum_{j \neq y} \max\!\Big[0,\; \Delta - \tilde{t}_y \cdot M\bar{v}(x) + \tilde{t}_j \cdot M\bar{v}(x)\Big]
+\]
+где $\tilde{t}_y$ --- Word2Vec эмбеддинг правильного класса, $M\bar{v}(x)$ --- спроецированные CNN-признаки.
+
+
+% ================================================================
+%  СХЕМА 2: f-CLSWGAN
+% ================================================================
+\newpage
+\section*{Схема 2. f-CLSWGAN (Xian et al., CVPR 2018)}
+
+Условный WGAN генерирует синтетические CNN-признаки для unseen-классов.
+
+\begin{center}
+\begin{tikzpicture}[
+  block/.style={rectangle, draw, rounded corners=3pt,
+                minimum height=0.9cm, text centered, font=\small, thick,
+                text width=2.5cm, align=center},
+  arr/.style={-{Stealth[length=6pt]}, thick},
+  dim/.style={font=\scriptsize, color=gray},
+]
+
+% Inputs to Generator
+\node[block, fill=normpur, minimum width=2cm] (noise) at (0, 0) {Шум\\$z \sim \mathcal{N}(0, I)$};
+\node[block, fill=textcol, minimum width=2cm] (desc) at (0, -1.8) {Описание класса\\$c(y)$};
+\node[dim, below=0.05cm of desc] {атрибуты / w2v};
+
+% Generator
+\node[block, fill=hidgreen, minimum width=2.8cm, minimum height=1.5cm] (gen) at (3.8, -0.9) {\textbf{Генератор $G$}\\MLP\\(4096 hidden)};
+\draw[arr] (noise.east) -- ++(0.5,0) |- ([yshift=3pt]gen.west);
+\draw[arr] (desc.east) -- ++(0.5,0) |- ([yshift=-3pt]gen.west);
+
+% Generated feature
+\node[block, fill=projcyan, minimum width=2.5cm] (fake) at (7.5, -0.9) {Синтетический\\признак $\tilde{x}$};
+\node[dim, below=0.1cm of fake] {2048-dim};
+\draw[arr] (gen) -- (fake);
+
+% Discriminator
+\node[block, fill=outred, minimum width=2.8cm, minimum height=1.2cm] (disc) at (11, 0.3) {\textbf{Дискриминатор $D$}\\MLP\\<<реальный / сгенерированный?>>};
+
+% Real feature
+\node[block, fill=tokblue, minimum width=2.5cm] (real) at (7.5, 1.5) {Реальный признак $x$\\(ResNet-101)};
+\node[dim, below=0.1cm of real] {2048-dim};
+
+\draw[arr] (fake.east) -- ++(0.5,0) |- ([yshift=-4pt]disc.west);
+\draw[arr] (real.east) -- ++(0.5,0) |- ([yshift=4pt]disc.west);
+
+% Classification loss
+\node[block, fill=lossred, minimum width=2.5cm] (cls) at (11, -2.2) {\textbf{Классификатор}\\$P(y|\tilde{x};\theta)$};
+\draw[arr] (fake.east) -- ++(0.5,0) |- (cls.west);
+
+% Loss labels
+\node[font=\small\bfseries, color=red!70!black, anchor=west] at (13, 0.3) {$L_{WGAN}$};
+\node[font=\small\bfseries, color=red!70!black, anchor=west] at (13, -2.2) {$L_{CLS}$};
+
+% Total loss
+\node[font=\small, text width=7cm, anchor=north west] at (0, -3.5)
+  {Полная функция потерь:
+   $\displaystyle\min_G \max_D\; L_{WGAN} + \beta \cdot L_{CLS}$, \quad $\beta = 0.01$, $\lambda = 10$};
+
+\end{tikzpicture}
+\end{center}
+
+
+% ================================================================
+%  СХЕМА 3: DAP Pipeline
+% ================================================================
+\newpage
+\section*{Схема 3. DAP Pipeline (Lampert et al., CVPR 2009)}
+
+Предсказание класса через промежуточные атрибуты.
+
+\begin{center}
+\begin{tikzpicture}[
+  block/.style={rectangle, draw, rounded corners=3pt,
+                minimum height=0.8cm, text centered, font=\small, thick,
+                text width=2.2cm, align=center},
+  ablock/.style={rectangle, draw, rounded corners=2pt,
+                minimum height=0.55cm, text centered, font=\scriptsize, thick,
+                text width=2.8cm, align=center, fill=warnamber},
+  arr/.style={-{Stealth[length=5pt]}, thick},
+  dim/.style={font=\scriptsize, color=gray},
+]
+
+% Input
+\node[block, fill=tokblue, minimum width=2.5cm] (img) at (0, 0) {Изображение $x$};
+
+% Attribute classifiers
+\node[ablock] (a1) at (4, 1.5) {$p(a_1|x)$: полосатый?};
+\node[ablock] (a2) at (4, 0.5) {$p(a_2|x)$: четвероногий?};
+\node[ablock] (a3) at (4, -0.5) {$p(a_3|x)$: водоплавающий?};
+\node[ablock] (am) at (4, -1.5) {$p(a_M|x)$: чёрно-белый?};
+
+\node[font=\small, color=gray] at (4, -2.2) {$M$ бинарных классификаторов};
+
+\draw[arr] (img.east) -- ++(0.5,0) |- (a1.west);
+\draw[arr] (img.east) -- ++(0.5,0) |- (a2.west);
+\draw[arr] (img.east) -- ++(0.5,0) |- (a3.west);
+\draw[arr] (img.east) -- ++(0.5,0) |- (am.west);
+
+% Predicted vector
+\node[block, fill=projcyan, minimum width=2.5cm, minimum height=1.5cm] (pred) at (8, 0) {Предсказанный\\вектор\\атрибутов};
+
+\draw[arr] (a1.east) -- ++(0.3,0) |- ([yshift=4pt]pred.west);
+\draw[arr] (a2.east) -- ++(0.3,0) |- ([yshift=1pt]pred.west);
+\draw[arr] (a3.east) -- ++(0.3,0) |- ([yshift=-2pt]pred.west);
+\draw[arr] (am.east) -- ++(0.3,0) |- ([yshift=-5pt]pred.west);
+
+% Comparison
+\node[block, fill=simgreen, minimum width=2.5cm, minimum height=1.2cm] (cmp) at (11.5, 0) {Сравнение\\с $a^y$ каждого\\unseen-класса};
+
+\draw[arr] (pred) -- (cmp);
+
+% Output
+\node[block, fill=outred, minimum width=2cm, thick] (out) at (14.5, 0) {$\hat{y}$\\argmax};
+
+\draw[arr] (cmp) -- (out);
+
+% Class descriptions
+\node[font=\scriptsize, text width=3.5cm, anchor=north, color=gray] at (11.5, -1.5)
+  {$a^{\text{зебра}} = (1, 1, 0, 1, \ldots)$\\
+   $a^{\text{пингвин}} = (0, 0, 1, 1, \ldots)$\\
+   $a^{\text{тигр}} = (1, 1, 0, 0, \ldots)$};
+
+\end{tikzpicture}
+\end{center}
+
+\[
+\hat{y} = \arg\max_{y \in Y_{unseen}} \sum_{m=1}^{M} \Big[ a_m^y \cdot \log p(a_m|x) + (1 - a_m^y) \cdot \log(1 - p(a_m|x)) \Big]
+\]
+
+
+% ================================================================
+%  СХЕМА 5: OWL-ViT
+% ================================================================
+\newpage
+\section*{Схема 5. OWL-ViT (Minderer et al., ECCV 2022)}
+
+Адаптация CLIP для zero-shot object detection: каждый patch-токен = потенциальный объект.
+
+\begin{center}
+\begin{tikzpicture}[
+  block/.style={rectangle, draw, rounded corners=3pt,
+                minimum height=0.8cm, text centered, font=\small, thick,
+                text width=2.5cm, align=center},
+  arr/.style={-{Stealth[length=5pt]}, thick},
+  dim/.style={font=\scriptsize, color=gray},
+]
+
+% Image input
+\node[block, fill=tokblue, minimum width=2.5cm] (img) at (0, 0) {Изображение\\$768\times768$};
+
+% ViT
+\node[block, fill=hidgreen, minimum width=3cm, minimum height=1.5cm] (vit) at (3.5, 0) {\textbf{ViT Encoder}\\(CLIP backbone)\\Без final pooling!};
+\draw[arr] (img) -- (vit);
+
+% Patch tokens
+\node[block, fill=projcyan, minimum width=2.8cm, minimum height=1cm] (patches) at (7.2, 0) {$N \times N$ patch\\токенов\\(576 шт.)};
+\node[dim, below=0.1cm of patches] {каждый 768-dim};
+\draw[arr] (vit) -- (patches);
+
+% Classification head
+\node[block, fill=warnamber, minimum width=2.8cm] (clshead) at (11, 1) {\textbf{Classification Head}\\Linear 768$\to$512};
+\draw[arr] (patches.east) -- ++(0.3,0) |- (clshead.west);
+
+% Box head
+\node[block, fill=outred, minimum width=2.8cm] (boxhead) at (11, -1) {\textbf{Box Head}\\MLP $\to$ $[c_x, c_y, w, h]$};
+\draw[arr] (patches.east) -- ++(0.3,0) |- (boxhead.west);
+
+% Text queries
+\node[block, fill=textcol, minimum width=2.8cm] (text) at (11, 3) {Text Encoder\\<<a cat>>, <<a dog>>};
+\node[dim, below=0.05cm of text] {текстовые эмбеддинги};
+
+% Cosine sim
+\node[block, fill=simgreen, minimum width=1.5cm] (cos) at (14, 1) {$\cos$};
+\draw[arr] (clshead) -- (cos);
+\draw[arr] (text.east) -- ++(0.5,0) |- (cos.north);
+
+% NMS
+\node[block, fill=lossred, minimum width=2cm, thick] (nms) at (14, -1) {NMS\\$\to$ boxes};
+\draw[arr] (cos.south) -- (nms.north);
+\draw[arr] (boxhead) -- (nms);
+
+% Key difference
+\node[font=\small, text width=8cm, anchor=north west] at (0, -2.5)
+  {\textbf{Ключевое отличие от CLIP:} CLIP берёт [CLS]-токен $\to$ один вектор на всё изображение.\\
+   OWL-ViT использует \textbf{все patch-токены} $\to$ каждый патч = потенциальный объект.\\
+   К каждому токену прикреплены Classification Head ($\cos$ с текстом) + Box Head ($\to$ bbox).};
+
+\end{tikzpicture}
+\end{center}
+
+
+% ================================================================
+%  СХЕМА 6: Siamese Networks
+% ================================================================
+\newpage
+\section*{Схема 6. Siamese Networks (Koch et al., ICML Workshop 2015)}
+
+Две одинаковые CNN с общими весами определяют, принадлежат ли два изображения одному классу.
+
+\begin{center}
+\begin{tikzpicture}[
+  block/.style={rectangle, draw, rounded corners=3pt,
+                minimum height=0.9cm, text centered, font=\small, thick,
+                text width=2.5cm, align=center},
+  arr/.style={-{Stealth[length=5pt]}, thick},
+  dim/.style={font=\scriptsize, color=gray},
+]
+
+% Image 1 path
+\node[block, fill=tokblue] (img1) at (0, 1.5) {Image$_1$};
+\node[block, fill=hidgreen, minimum width=3cm] (cnn1) at (3.5, 1.5) {CNN\\(shared weights)};
+\node[block, fill=projcyan] (h1) at (6.5, 1.5) {$\mathbf{h}_1$};
+\node[dim, below=0.1cm of h1] {4096-dim};
+
+\draw[arr] (img1) -- (cnn1);
+\draw[arr] (cnn1) -- (h1);
+
+% Image 2 path
+\node[block, fill=tokblue] (img2) at (0, -1.5) {Image$_2$};
+\node[block, fill=hidgreen, minimum width=3cm] (cnn2) at (3.5, -1.5) {CNN\\(shared weights)};
+\node[block, fill=projcyan] (h2) at (6.5, -1.5) {$\mathbf{h}_2$};
+\node[dim, below=0.1cm of h2] {4096-dim};
+
+\draw[arr] (img2) -- (cnn2);
+\draw[arr] (cnn2) -- (h2);
+
+% Shared weights annotation
+\draw[dashed, gray, thick] (3.5, 0.7) -- (3.5, -0.7) node[midway, right, font=\scriptsize, color=gray] {общие веса};
+
+% Comparison
+\node[block, fill=warnamber, minimum width=2.5cm] (diff) at (9.5, 0) {Взвешенная\\$|\mathbf{h}_1 - \mathbf{h}_2|$};
+\draw[arr] (h1.east) -- ++(0.3,0) |- (diff.north);
+\draw[arr] (h2.east) -- ++(0.3,0) |- (diff.south);
+
+% FC + sigmoid
+\node[block, fill=outred] (fc) at (12.5, 0) {FC $\to$ $\sigma$};
+\draw[arr] (diff) -- (fc);
+
+% Output
+\node[font=\large\bfseries] (out) at (14.5, 0) {$p \in [0,1]$};
+\draw[arr] (fc) -- (out);
+
+\end{tikzpicture}
+\end{center}
+
+\[
+p(x_1, x_2) = \sigma\!\left(\sum_j \alpha_j \cdot |h_1^{(j)} - h_2^{(j)}|\right)
+\qquad
+L = y \cdot \log p + (1-y) \cdot \log(1-p)
+\]
+$\alpha_j$ --- обучаемый вес $j$-й компоненты; $y=1$ если один класс, $y=0$ если разные.
+
+
+% ================================================================
+%  СХЕМА 7: Matching Networks
+% ================================================================
+\newpage
+\section*{Схема 7. Matching Networks (Vinyals et al., NeurIPS 2016)}
+
+Классификация через взвешенное голосование по support set с attention.
+
+\begin{center}
+\begin{tikzpicture}[
+  block/.style={rectangle, draw, rounded corners=3pt,
+                minimum height=0.8cm, text centered, font=\small, thick,
+                text width=2.5cm, align=center},
+  arr/.style={-{Stealth[length=5pt]}, thick},
+  dim/.style={font=\scriptsize, color=gray},
+]
+
+% Support set
+\node[block, fill=tokblue, minimum width=3cm, minimum height=1.5cm] (supp) at (0, 0)
+  {Support set\\$\{(x_1,y_1), \ldots,$\\$(x_K, y_K)\}$};
+
+% bi-LSTM
+\node[block, fill=hidgreen, minimum width=2.5cm, minimum height=1cm] (lstm) at (3.5, 0)
+  {\textbf{bi-LSTM}\\(FCE)};
+\draw[arr] (supp) -- (lstm);
+
+% Embeddings g
+\node[block, fill=projcyan, minimum width=2.5cm] (gemb) at (6.5, 0)
+  {$g(x_i, S)$\\контекстные};
+\draw[arr] (lstm) -- (gemb);
+
+% Query
+\node[block, fill=textcol, minimum width=2.5cm] (query) at (0, -3)
+  {Query $\hat{x}$};
+\node[block, fill=hidgreen, minimum width=2.5cm] (fenc) at (3.5, -3)
+  {Encoder $f$};
+\node[block, fill=projcyan, minimum width=2cm] (femb) at (6.5, -3)
+  {$f(\hat{x})$};
+
+\draw[arr] (query) -- (fenc);
+\draw[arr] (fenc) -- (femb);
+
+% Cosine + softmax
+\node[block, fill=simgreen, minimum width=2.5cm, minimum height=1.2cm] (attn) at (10, -1.5)
+  {$\cos \to$ softmax\\$\to$ weights $a_i$};
+\draw[arr] (gemb.east) -- ++(0.5,0) |- ([yshift=3pt]attn.west);
+\draw[arr] (femb.east) -- ++(0.5,0) |- ([yshift=-3pt]attn.west);
+
+% Weighted vote
+\node[block, fill=outred, minimum width=2.5cm, thick] (vote) at (13.5, -1.5)
+  {$\hat{y} = \sum_i a_i y_i$\\взвеш. голосование};
+\draw[arr] (attn) -- (vote);
+
+\end{tikzpicture}
+\end{center}
+
+\[
+a(\hat{x}, x_i) = \frac{\exp\!\big(\cos(f(\hat{x}),\; g(x_i, S))\big)}{\sum_j \exp\!\big(\cos(f(\hat{x}),\; g(x_j, S))\big)}
+\qquad
+\hat{y} = \sum_{i=1}^{K} a(\hat{x}, x_i) \cdot y_i
+\]
+
+$g(x_i, S) = \overrightarrow{h}_i + \overleftarrow{h}_i + g'(x_i)$ --- Full Context Embedding через bi-LSTM.
+
+
+% ================================================================
+%  СХЕМА 8: Prototypical Networks
+% ================================================================
+\newpage
+\section*{Схема 8. Prototypical Networks (Snell et al., NeurIPS 2017)}
+
+Прототип = среднее эмбеддингов support-примеров. Классификация по ближайшему прототипу.
+
+\begin{center}
+\begin{tikzpicture}[
+  block/.style={rectangle, draw, rounded corners=3pt,
+                minimum height=0.8cm, text centered, font=\small, thick,
+                text width=2.5cm, align=center},
+  arr/.style={-{Stealth[length=5pt]}, thick},
+  dim/.style={font=\scriptsize, color=gray},
+]
+
+% Support per class
+\node[block, fill=tokblue, minimum width=2cm] (s1) at (0, 1.5)  {Support класс 1\\$K$ примеров};
+\node[block, fill=tokblue, minimum width=2cm] (s2) at (0, 0)    {Support класс 2\\$K$ примеров};
+\node[block, fill=tokblue, minimum width=2cm] (sn) at (0, -1.5) {Support класс $N$\\$K$ примеров};
+
+% Encoder
+\node[block, fill=hidgreen, minimum width=2.5cm, minimum height=3.5cm] (enc) at (3.5, 0)
+  {\textbf{Encoder} $f_\phi$\\(CNN,\\4 conv блока,\\shared)};
+
+\draw[arr] (s1) -- (enc.north west |- s1);
+\draw[arr] (s2) -- (enc);
+\draw[arr] (sn) -- (enc.south west |- sn);
+
+% Mean
+\node[block, fill=warnamber, minimum width=2cm] (m1) at (6.5, 1.5)  {mean $\to \mathbf{c}_1$};
+\node[block, fill=warnamber, minimum width=2cm] (m2) at (6.5, 0)    {mean $\to \mathbf{c}_2$};
+\node[block, fill=warnamber, minimum width=2cm] (mn) at (6.5, -1.5) {mean $\to \mathbf{c}_N$};
+
+\draw[arr] ([yshift=8pt]enc.east) -- (m1.west);
+\draw[arr] (enc.east) -- (m2.west);
+\draw[arr] ([yshift=-8pt]enc.east) -- (mn.west);
+
+% Query path
+\node[block, fill=textcol, minimum width=2cm] (q) at (0, -3.5)  {Query $x^*$};
+\node[block, fill=hidgreen, minimum width=2cm] (qenc) at (3.5, -3.5) {$f_\phi$\\(same)};
+\draw[arr] (q) -- (qenc);
+
+% Distance + softmax
+\node[block, fill=simgreen, minimum width=3cm, minimum height=1.5cm] (dist) at (10, -1)
+  {$d(f_\phi(x^*), \mathbf{c}_k)$\\$\downarrow$\\softmax $\to$ $p(y=k|x^*)$};
+
+\draw[arr] (m1.east) -- ++(0.3,0) |- ([yshift=5pt]dist.west);
+\draw[arr] (m2.east) -- ++(0.3,0) |- (dist.west);
+\draw[arr] (mn.east) -- ++(0.3,0) |- ([yshift=-5pt]dist.west);
+\draw[arr] (qenc.east) -- ++(3.5,0) |- ([yshift=-10pt]dist.west);
+
+% Output
+\node[block, fill=outred, thick, minimum width=2cm] (out) at (13.5, -1) {$\hat{y}$\\argmax};
+\draw[arr] (dist) -- (out);
+
+\end{tikzpicture}
+\end{center}
+
+\[
+\mathbf{c}_k = \frac{1}{|S_k|} \sum_{(x_i, y_i) \in S_k} f_\phi(x_i)
+\qquad
+p(y\!=\!k \mid x^*) = \frac{\exp(-d(f_\phi(x^*), \mathbf{c}_k))}{\sum_{k'} \exp(-d(f_\phi(x^*), \mathbf{c}_{k'}))}
+\]
+
+$d$ --- евклидово расстояние (дивергенция Брэгмана для $\varphi(z) = \|z\|^2$).
+
+
+% ================================================================
+%  СХЕМА 9: MAML
+% ================================================================
+\newpage
+\section*{Схема 9. MAML (Finn et al., ICML 2017)}
+
+Мета-обучение инициализации через двухуровневую оптимизацию.
+
+\begin{center}
+\begin{tikzpicture}[
+  block/.style={rectangle, draw, rounded corners=3pt,
+                minimum height=0.8cm, text centered, font=\small, thick,
+                text width=2.8cm, align=center},
+  arr/.style={-{Stealth[length=5pt]}, thick},
+  dim/.style={font=\scriptsize, color=gray},
+]
+
+% Meta-weights
+\node[block, fill=warnamber, minimum width=3cm, minimum height=1.2cm, line width=1.5pt] (theta) at (0, 0)
+  {\textbf{Мета-веса} $\theta$\\(общая инициализация)};
+
+% Inner loops
+\node[block, fill=tokblue] (t1) at (5, 2)   {Задача $T_1$\\(support set)};
+\node[block, fill=tokblue] (t2) at (5, 0)   {Задача $T_2$\\(support set)};
+\node[block, fill=tokblue] (t3) at (5, -2)  {Задача $T_3$\\(support set)};
+
+\node[block, fill=hidgreen] (th1) at (9, 2)  {$\theta'_1 = \theta - \alpha\nabla L_{T_1}$};
+\node[block, fill=hidgreen] (th2) at (9, 0)  {$\theta'_2 = \theta - \alpha\nabla L_{T_2}$};
+\node[block, fill=hidgreen] (th3) at (9, -2) {$\theta'_3 = \theta - \alpha\nabla L_{T_3}$};
+
+\draw[arr] (theta.east) -- ++(0.5,0) |- (t1.west);
+\draw[arr] (theta.east) -- ++(0.5,0) |- (t2.west);
+\draw[arr] (theta.east) -- ++(0.5,0) |- (t3.west);
+
+\draw[arr] (t1) -- node[above, font=\tiny, color=gray]{inner loop} (th1);
+\draw[arr] (t2) -- node[above, font=\tiny, color=gray]{inner loop} (th2);
+\draw[arr] (t3) -- node[above, font=\tiny, color=gray]{inner loop} (th3);
+
+% Outer loop: eval on query sets
+\node[block, fill=outred, minimum width=3cm] (eval) at (13, 0) {Eval на query sets\\$\sum_i L_{T_i}(f_{\theta'_i})$};
+
+\draw[arr] (th1.east) -- ++(0.3,0) |- ([yshift=4pt]eval.west);
+\draw[arr] (th2.east) -- (eval.west);
+\draw[arr] (th3.east) -- ++(0.3,0) |- ([yshift=-4pt]eval.west);
+
+% Update theta
+\draw[arr, dashed, red, thick] (eval.south) -- ++(0,-1.2) -| (theta.south)
+  node[pos=0.25, below, font=\small, color=red] {outer loop: $\theta \leftarrow \theta - \beta\nabla_\theta \sum_i L_{T_i}(f_{\theta'_i})$};
+
+% Labels
+\draw[decorate, decoration={brace, amplitude=6pt}]
+  (6.5, 2.6) -- (10.5, 2.6) node[midway, above=6pt, font=\small] {Inner loop ($\alpha$)};
+
+\end{tikzpicture}
+\end{center}
+
+\begin{align*}
+&\textbf{Inner:}\quad \theta'_i = \theta - \alpha \nabla_\theta L_{T_i}(f_\theta) && \text{--- адаптация к задаче}\\
+&\textbf{Outer:}\quad \theta \leftarrow \theta - \beta \nabla_\theta \sum_{T_i} L_{T_i}(f_{\theta'_i}) && \text{--- мета-оптимизация}
+\end{align*}
+
+
+% ================================================================
+%  СХЕМА 10: SetFit
+% ================================================================
+\newpage
+\section*{Схема 10. SetFit (Tunstall et al., 2022)}
+
+Двухэтапный few-shot: контрастивное дообучение Sentence Transformer + классификационная голова.
+
+\begin{center}
+\begin{tikzpicture}[
+  block/.style={rectangle, draw, rounded corners=3pt,
+                minimum height=0.8cm, text centered, font=\small, thick,
+                text width=2.8cm, align=center},
+  arr/.style={-{Stealth[length=5pt]}, thick},
+  dim/.style={font=\scriptsize, color=gray},
+]
+
+% Stage 1
+\node[font=\large\bfseries, color=blue!70!black] at (-0.5, 3.5) {Этап 1};
+
+\node[block, fill=tokblue, minimum width=2cm] (data) at (0, 2.3) {$K$ примеров\\на класс};
+
+\node[block, fill=warnamber, minimum width=3cm] (pairs) at (3.5, 2.3) {Генерация пар\\позитивные ($y\!=\!1$)\\негативные ($y\!=\!0$)};
+\node[dim, below=0.1cm of pairs] {$R=20$ пар/класс};
+
+\draw[arr] (data) -- (pairs);
+
+\node[block, fill=hidgreen, minimum width=3.2cm, minimum height=1.2cm] (st) at (7.5, 2.3)
+  {\textbf{Sentence}\\
+   \textbf{Transformer}\\
+   contrastive fine-tune};
+
+\draw[arr] (pairs) -- (st);
+
+% Loss
+\node[block, fill=lossred, minimum width=3.5cm] (loss) at (12, 2.3)
+  {$L = (\cos(f(x_i), f(x_j)) - y)^2$};
+
+\draw[arr] (st) -- (loss);
+
+% Stage 2
+\node[font=\large\bfseries, color=green!50!black] at (-0.5, 0) {Этап 2};
+
+\node[block, fill=projcyan, minimum width=3cm] (embs) at (3.5, 0) {Эмбеддинги из\\дообученного ST};
+\draw[arr] (st.south) -- ++(0, -0.6) -| (embs.north);
+
+\node[block, fill=outred, minimum width=2.5cm] (lr) at (7.5, 0)
+  {Logistic\\Regression};
+\draw[arr] (embs) -- (lr);
+
+\node[block, fill=simgreen, minimum width=2cm, thick] (clf) at (10.5, 0) {Classifier};
+\draw[arr] (lr) -- (clf);
+
+% Inference
+\node[font=\large\bfseries, color=gray] at (-0.5, -2) {Инференс};
+
+\node[block, fill=textcol] (inp) at (3.5, -2) {Новый текст $x$};
+\node[block, fill=hidgreen] (st2) at (7.5, -2) {ST (дообуч.)};
+\node[block, fill=outred] (lr2) at (10.5, -2) {LR head};
+\node[font=\large\bfseries] (out) at (13, -2) {$\hat{y}$};
+
+\draw[arr] (inp) -- (st2);
+\draw[arr] (st2) -- (lr2);
+\draw[arr] (lr2) -- (out);
+
+\end{tikzpicture}
+\end{center}
+
+Результат: SetFit ($\sim$355M) \textbf{превосходит} GPT-3 (175B) на RAFT: 71.3\% vs 62.7\%.
+
+
+% ================================================================
+%  СХЕМА 11: LoRA
+% ================================================================
+\newpage
+\section*{Схема 11. LoRA (Hu et al., ICLR 2022)}
+
+Низкоранговое разложение обновления весов: $W = W_0 + BA$, $r \ll \min(d,k)$.
+
+\begin{center}
+\begin{tikzpicture}[
+  block/.style={rectangle, draw, rounded corners=3pt,
+                minimum height=0.8cm, text centered, font=\small, thick,
+                text width=2.5cm, align=center},
+  arr/.style={-{Stealth[length=5pt]}, thick},
+  dim/.style={font=\scriptsize, color=gray},
+  frozen/.style={pattern=north east lines, pattern color=red!30},
+]
+
+% Input
+\node[block, fill=tokblue, minimum width=2cm] (x) at (0, 0) {Вход $x$\\$\in \mathbb{R}^k$};
+
+% W0 path (frozen)
+\node[block, fill=outred, minimum width=3cm, minimum height=1.5cm, line width=1.5pt] (w0) at (4, 1.8)
+  {\textbf{$W_0$} ($d \times k$)\\предобученные веса\\\textcolor{red}{ЗАМОРОЖЕНЫ}};
+\draw[arr] (x.north) -- ++(0, 0.5) -| (w0.south);
+
+\node[font=\small] (h0) at (7.5, 1.8) {$h_0 = W_0 x$};
+\draw[arr] (w0) -- (h0);
+
+% BA path (trainable)
+\node[block, fill=hidgreen, minimum width=1.8cm] (A) at (2.5, -1.8) {$A$\\($r \times k$)};
+\node[dim, below=0.1cm of A] {обучаемая};
+
+\node[block, fill=hidgreen, minimum width=1.8cm] (B) at (5.5, -1.8) {$B$\\($d \times r$)};
+\node[dim, below=0.1cm of B] {обучаемая};
+
+\draw[arr] (x.south) -- ++(0, -0.5) -| (A.north);
+\draw[arr] (A) -- (B);
+
+\node[font=\small] (dh) at (7.5, -1.8) {$\Delta h = \frac{\alpha}{r} BAx$};
+\draw[arr] (B) -- (dh);
+
+% Sum
+\node[circle, draw, fill=warnamber, minimum size=0.8cm, font=\large, thick] (sum) at (10, 0) {$+$};
+\draw[arr] (h0) -- ++(0.5,0) |- (sum.north);
+\draw[arr] (dh) -- ++(0.5,0) |- (sum.south);
+
+% Output
+\node[block, fill=projcyan, minimum width=2.5cm, thick] (out) at (13, 0) {Выход $h$\\$= h_0 + \Delta h$\\$\in \mathbb{R}^d$};
+\draw[arr] (sum) -- (out);
+
+% Rank annotation
+\draw[decorate, decoration={brace, amplitude=6pt, mirror}]
+  (1.4, -2.8) -- (6.8, -2.8)
+  node[midway, below=8pt, font=\small, color=gray] {rank $r \ll \min(d, k)$, обычно $r = 4$ или $8$};
+
+% Key properties
+\node[font=\small, text width=12cm, anchor=north west] at (0, -4.2)
+  {Init: $A \sim \mathcal{N}(0, \sigma^2)$, $B = 0$ $\Rightarrow$ $\Delta W = 0$ в начале (старт = предобученная модель).\\
+   Инференс: $W = W_0 + BA$ вычисляется явно \textbf{один раз} $\Rightarrow$ нулевая дополнительная задержка.\\
+   GPT-3 (175B): обучаемых параметров в \textbf{10\,000$\times$} меньше, GPU-памяти в \textbf{3$\times$} меньше.};
+
+\end{tikzpicture}
+\end{center}
+
+\[
+\boxed{W = W_0 + \Delta W = W_0 + BA, \quad B \in \mathbb{R}^{d \times r},\; A \in \mathbb{R}^{r \times k},\; r \ll \min(d,k)}
+\]
+
+\end{document}

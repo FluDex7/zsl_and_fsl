@@ -1,0 +1,501 @@
+\documentclass[12pt,a4paper]{article}
+
+\usepackage[T2A]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[russian]{babel}
+\usepackage{amsmath, amssymb}
+\usepackage{geometry}
+\usepackage{tikz}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{colortbl}
+
+\usetikzlibrary{
+  arrows.meta, positioning, shapes.geometric,
+  fit, backgrounds, calc,
+  decorations.pathreplacing
+}
+
+\geometry{top=1.2cm, bottom=1.2cm, left=1.5cm, right=1.5cm}
+
+% ── Color palette ──────────────────────────────
+\definecolor{tokblue}  {RGB}{173,216,230}
+\definecolor{hidgreen} {RGB}{180,240,180}
+\definecolor{outred}   {RGB}{255,200,200}
+\definecolor{warnamber}{RGB}{255,220,150}
+\definecolor{normpur}  {RGB}{220,200,255}
+\definecolor{projcyan} {RGB}{180,230,230}
+\definecolor{lossred}  {RGB}{240,128,128}
+\definecolor{textcol}  {RGB}{255,228,196}
+\definecolor{simgreen} {RGB}{144,238,144}
+
+\pagestyle{empty}
+
+\begin{document}
+
+\begin{center}
+{\LARGE\bfseries Архитектура CLIP (ViT-B/32)}\\[0.2em]
+{\small Radford et al. --- ICML 2021}
+\end{center}
+
+\vspace{0.3cm}
+
+% ================================================================
+%  IMAGE ENCODER --- отдельная схема (левая колонка на стр.1)
+% ================================================================
+
+\noindent
+\begin{minipage}[t]{0.48\textwidth}
+\begin{center}
+{\large\bfseries\color{blue!60!black} Image Encoder (ViT)}
+\end{center}
+\vspace{0.2cm}
+
+\begin{center}
+\begin{tikzpicture}[
+  block/.style={rectangle, draw, rounded corners=3pt,
+                minimum width=4.5cm, minimum height=0.8cm,
+                text centered, font=\small, thick,
+                text width=4.2cm, align=center},
+  sblock/.style={rectangle, draw, rounded corners=2pt,
+                minimum width=4cm, minimum height=0.65cm,
+                text centered, font=\footnotesize, thick,
+                text width=3.8cm, align=center},
+  arr/.style={-{Stealth[length=5pt]}, thick},
+  dim/.style={font=\scriptsize, color=gray!80!black},
+  scale=0.95
+]
+
+\node[block, fill=tokblue] (img) at (0, 0) {Изображение\\$224\times224\times3$};
+
+\node[block, fill=tokblue!50] (patch) at (0, -1.6) {\textbf{Patch Embedding}\\Conv2d(3, 768, k=32, s=32)};
+\node[dim, anchor=west] at (2.5, -1.6) {$[49, 768]$};
+
+\node[block, fill=projcyan] (clspos) at (0, -3.2) {+ $[\mathrm{CLS}]$ token\\+ Positional Embedding};
+\node[dim, anchor=west] at (2.5, -3.2) {$[50, 768]$};
+
+\node[sblock, fill=normpur] (ln0) at (0, -4.5) {LayerNorm (pre)};
+
+% ── Transformer Block ──
+\node[rectangle, draw=black!60, rounded corners=5pt, fill=hidgreen!20,
+      minimum width=5cm, minimum height=5.5cm, thick, dashed]
+  (tbox) at (0, -7.7) {};
+\node[font=\small\bfseries, anchor=north] at (0, -5.0) {Transformer Block};
+
+\node[sblock, fill=normpur] (tln1) at (0, -5.7) {LayerNorm};
+\node[sblock, fill=warnamber] (mhsa) at (0, -6.7) {Multi-Head Self-Attention\\12 heads $\times$ 64 dim};
+\node[font=\tiny, color=gray, anchor=west] at (2.3, -6.3) {+ residual};
+
+\node[sblock, fill=normpur] (tln2) at (0, -7.8) {LayerNorm};
+\node[sblock, fill=hidgreen!60] (mlpv) at (0, -8.9) {MLP: 768 $\to$ 3072\\QuickGELU\\3072 $\to$ 768};
+\node[font=\tiny, color=gray, anchor=west] at (2.3, -8.4) {+ residual};
+
+% ×12 brace
+\draw[decorate, decoration={brace, amplitude=7pt, mirror}]
+  (-2.8, -5.2) -- (-2.8, -9.8)
+  node[midway, left=10pt, font=\normalsize\bfseries] {$\times 12$};
+
+% Post-transformer
+\node[sblock, fill=normpur] (lnf) at (0, -10.8) {LayerNorm (final)};
+
+\node[sblock, fill=outred!60] (clstake) at (0, -11.8) {Берём $[\mathrm{CLS}]$ токен};
+\node[dim, anchor=west] at (2.3, -11.8) {$[768]$};
+
+\node[block, fill=projcyan] (projI) at (0, -13.2) {\textbf{Linear Projection}\\$W_v: 768 \to 512$\\+ L2-нормализация};
+
+\node[block, fill=outred, thick] (Ie) at (0, -14.8) {$\mathbf{I_e} \in \mathbb{R}^{512}$};
+
+% ── Arrows ──
+\draw[arr] (img) -- (patch);
+\draw[arr] (patch) -- (clspos);
+\draw[arr] (clspos) -- (ln0);
+\draw[arr] (ln0) -- ([yshift=3pt]tbox.north);
+\draw[arr] ([yshift=-3pt]tbox.south) -- (lnf);
+\draw[arr] (lnf) -- (clstake);
+\draw[arr] (clstake) -- (projI);
+\draw[arr] (projI) -- (Ie);
+
+\end{tikzpicture}
+\end{center}
+\end{minipage}
+\hfill
+% ================================================================
+%  TEXT ENCODER --- правая колонка на стр.1
+% ================================================================
+\begin{minipage}[t]{0.48\textwidth}
+\begin{center}
+{\large\bfseries\color{red!60!black} Text Encoder (Transformer)}
+\end{center}
+\vspace{0.2cm}
+
+\begin{center}
+\begin{tikzpicture}[
+  block/.style={rectangle, draw, rounded corners=3pt,
+                minimum width=4.5cm, minimum height=0.8cm,
+                text centered, font=\small, thick,
+                text width=4.2cm, align=center},
+  sblock/.style={rectangle, draw, rounded corners=2pt,
+                minimum width=4cm, minimum height=0.65cm,
+                text centered, font=\footnotesize, thick,
+                text width=3.8cm, align=center},
+  arr/.style={-{Stealth[length=5pt]}, thick},
+  dim/.style={font=\scriptsize, color=gray!80!black},
+  scale=0.95
+]
+
+\node[block, fill=textcol] (txt) at (0, 0) {Текст\\<<A photo of a cat>>};
+
+\node[block, fill=textcol!50] (bpe) at (0, -1.6) {\textbf{BPE Tokenizer}\\vocab = 49\,408};
+\node[dim, anchor=west] at (2.5, -1.6) {$[77]$ ток.};
+
+\node[block, fill=textcol!70] (emb) at (0, -3.2) {Token Embedding\\+ Positional Embedding};
+\node[dim, anchor=west] at (2.5, -3.2) {$[77, 512]$};
+
+% ── Transformer Block ──
+\node[rectangle, draw=black!60, rounded corners=5pt, fill=hidgreen!20,
+      minimum width=5cm, minimum height=5.5cm, thick, dashed]
+  (tbox2) at (0, -7.0) {};
+\node[font=\small\bfseries, anchor=north] at (0, -4.3) {Transformer Block};
+
+\node[sblock, fill=normpur] (t2ln1) at (0, -5.0) {LayerNorm};
+\node[sblock, fill=warnamber] (t2mhsa) at (0, -6.1) {\textbf{Masked} Self-Attention\\8 heads $\times$ 64 dim};
+\node[font=\tiny, color=red!70!black, anchor=west, text width=2cm] at (2.3, -5.6) {Каузальная маска (GPT-style)};
+\node[font=\tiny, color=gray, anchor=west] at (2.3, -5.9) {+ residual};
+
+\node[sblock, fill=normpur] (t2ln2) at (0, -7.2) {LayerNorm};
+\node[sblock, fill=hidgreen!60] (t2mlp) at (0, -8.3) {MLP: 512 $\to$ 2048\\QuickGELU\\2048 $\to$ 512};
+\node[font=\tiny, color=gray, anchor=west] at (2.3, -7.8) {+ residual};
+
+% ×12 brace
+\draw[decorate, decoration={brace, amplitude=7pt}]
+  (2.8, -4.5) -- (2.8, -9.2)
+  node[midway, right=10pt, font=\normalsize\bfseries] {$\times 12$};
+
+% Post-transformer
+\node[sblock, fill=normpur] (t2lnf) at (0, -10.2) {LayerNorm (final)};
+
+\node[sblock, fill=outred!60] (eostake) at (0, -11.2) {Берём $[\mathrm{EOS}]$ токен};
+\node[dim, anchor=west] at (2.3, -11.2) {$[512]$};
+
+\node[block, fill=projcyan] (projT) at (0, -12.6) {\textbf{Linear Projection}\\$W_t: 512 \to 512$\\+ L2-нормализация};
+
+\node[block, fill=outred, thick] (Te) at (0, -14.2) {$\mathbf{T_e} \in \mathbb{R}^{512}$};
+
+% ── Arrows ──
+\draw[arr] (txt) -- (bpe);
+\draw[arr] (bpe) -- (emb);
+\draw[arr] (emb) -- ([yshift=3pt]tbox2.north);
+\draw[arr] ([yshift=-3pt]tbox2.south) -- (t2lnf);
+\draw[arr] (t2lnf) -- (eostake);
+\draw[arr] (eostake) -- (projT);
+\draw[arr] (projT) -- (Te);
+
+\end{tikzpicture}
+\end{center}
+\end{minipage}
+
+\vspace{0.5cm}
+
+% ── Contrastive Loss (центр, под обоими энкодерами) ──
+\begin{center}
+\begin{tikzpicture}[
+  block/.style={rectangle, draw, rounded corners=4pt,
+                minimum height=0.9cm,
+                text centered, font=\small, thick,
+                align=center},
+  arr/.style={-{Stealth[length=5pt]}, thick},
+]
+
+\node[block, fill=outred, minimum width=2.5cm] (ie) at (-3, 0) {$\mathbf{I_e} \in \mathbb{R}^{512}$};
+\node[block, fill=outred, minimum width=2.5cm] (te) at (3, 0) {$\mathbf{T_e} \in \mathbb{R}^{512}$};
+
+\node[block, fill=simgreen, minimum width=4cm, text width=3.8cm]
+  (sim) at (0, -1.3) {$\cos(\mathbf{I_e}, \mathbf{T_e})$\\Косинусное сходство};
+
+\node[block, fill=lossred, minimum width=5.5cm, text width=5.3cm]
+  (loss) at (0, -2.8) {\textbf{Contrastive Loss}\\Symmetric Cross-Entropy на $N \times N$ матрице};
+
+\node[font=\scriptsize, color=gray] at (0, -3.7) {$\tau$ --- обучаемая температура, init: $\log(1/0.07) \approx 2.66$};
+
+\draw[arr, blue!60!black] (ie) -- (sim);
+\draw[arr, red!60!black] (te) -- (sim);
+\draw[arr] (sim) -- (loss);
+
+% Legend
+\node[font=\tiny, text width=6cm, align=left, anchor=west] at (-7, -1.5) {%
+  \textbf{Обозначения:}\\[2pt]
+  \tikz\fill[tokblue] (0,0) rectangle (0.25,0.18); Вход / Embedding\quad
+  \tikz\fill[hidgreen!20] (0,0) rectangle (0.25,0.18); Transformer Block\quad
+  \tikz\fill[warnamber] (0,0) rectangle (0.25,0.18); Self-Attention\\
+  \tikz\fill[normpur] (0,0) rectangle (0.25,0.18); LayerNorm\quad
+  \tikz\fill[projcyan] (0,0) rectangle (0.25,0.18); Проекция\quad
+  \tikz\fill[outred] (0,0) rectangle (0.25,0.18); Выход\quad
+  \tikz\fill[simgreen] (0,0) rectangle (0.25,0.18); Сходство
+};
+
+\end{tikzpicture}
+\end{center}
+
+\newpage
+
+% ================================================================
+%  СТРАНИЦА 2: Zero-Shot инференс + Transformer Block + формулы
+% ================================================================
+
+\begin{center}
+{\LARGE\bfseries Zero-Shot Classification: пайплайн инференса}
+\end{center}
+
+\vspace{0.3cm}
+
+\begin{center}
+\begin{tikzpicture}[
+  block/.style={rectangle, draw, rounded corners=3pt,
+                minimum width=2.8cm, minimum height=0.7cm,
+                text centered, font=\small, thick,
+                text width=2.6cm, align=center},
+  arr/.style={-{Stealth[length=5pt]}, thick},
+]
+
+% Image side
+\node[block, fill=tokblue] (img) at (-3.5, 0) {Изображение $x$};
+\node[block, fill=hidgreen, text width=3cm, minimum width=3.2cm]
+  (vit) at (-3.5, -1.5) {ViT Encoder\\(12 Transformer layers)};
+\node[block, fill=projcyan] (proj) at (-3.5, -3.0) {Linear + L2-norm};
+\node[block, fill=outred, thick] (ie) at (-3.5, -4.3) {$\mathbf{I_e}\in\mathbb{R}^{512}$};
+
+\draw[arr] (img) -- (vit);
+\draw[arr] (vit) -- (proj);
+\draw[arr] (proj) -- (ie);
+
+% Text side
+\node[block, fill=textcol, minimum width=3.5cm, text width=3.3cm]
+  (t1) at (3.5, 0.7) {<<A photo of a \textbf{cat}>>};
+\node[block, fill=textcol, minimum width=3.5cm, text width=3.3cm]
+  (t2) at (3.5, -0.2) {<<A photo of a \textbf{dog}>>};
+\node[block, fill=textcol, minimum width=3.5cm, text width=3.3cm]
+  (t3) at (3.5, -1.1) {<<A photo of a \textbf{zebra}>>};
+
+\node[block, fill=hidgreen, minimum width=3.2cm, text width=3cm]
+  (tenc) at (3.5, -2.5) {Text Encoder\\(12 layers)};
+\node[block, fill=projcyan] (tproj) at (3.5, -3.6) {Linear + L2-norm};
+\node[block, fill=outred, thick, text width=3cm, minimum width=3.2cm]
+  (te) at (3.5, -4.8) {$T_e^1, T_e^2, T_e^3$\\$\in\mathbb{R}^{512}$ каждый};
+
+\draw[arr] (t1.south) -- ++(0,-0.15) -| ([xshift=-0.4cm]tenc.north);
+\draw[arr] (t2.south) -- (tenc);
+\draw[arr] (t3.south) -- ++(0,-0.05) -| ([xshift=0.4cm]tenc.north);
+\draw[arr] (tenc) -- (tproj);
+\draw[arr] (tproj) -- (te);
+
+% Cosine sim
+\node[block, fill=simgreen, minimum width=5cm, text width=4.8cm]
+  (cos) at (0, -6.3) {$\cos(\mathbf{I_e}, \mathbf{T_e^k})$ для $k=1,2,3$};
+\draw[arr, blue!60!black] (ie.south) -- ++(0,-0.5) -| ([xshift=-0.5cm]cos.north);
+\draw[arr, red!60!black] (te.south) -- ++(0,-0.3) -| ([xshift=0.5cm]cos.north);
+
+% Argmax
+\node[block, fill=lossred, minimum width=5cm, text width=4.8cm]
+  (argmax) at (0, -7.7) {$\hat{y} = \arg\max_k \cos(\mathbf{I_e}, \mathbf{T_e^k})$};
+\draw[arr] (cos) -- (argmax);
+
+\node[font=\large\bfseries, color=blue!50!black] at (0, -8.7) {Предсказание: <<cat>>};
+
+\end{tikzpicture}
+\end{center}
+
+\vspace{0.8cm}
+
+% ================================================================
+%  Детали Transformer Block
+% ================================================================
+
+\begin{center}
+{\Large\bfseries Структура одного Transformer Block}
+\end{center}
+\vspace{0.2cm}
+
+\begin{center}
+\begin{tikzpicture}[
+  block/.style={rectangle, draw, rounded corners=3pt,
+                minimum width=5cm, minimum height=0.7cm,
+                text centered, font=\small, thick,
+                text width=4.8cm, align=center},
+  arr/.style={-{Stealth[length=5pt]}, thick},
+  add/.style={circle, draw, fill=warnamber, minimum size=0.7cm, font=\normalsize},
+]
+  \node[block, fill=tokblue]  (in)   at (0, 0)   {Вход $\mathbf{x} \in \mathbb{R}^{n \times d}$};
+  \node[block, fill=normpur]  (ln1)  at (0, 1.5)  {LayerNorm};
+  \node[block, fill=warnamber] (attn) at (0, 3.0) {Multi-Head Self-Attention};
+  \node[add]                  (add1) at (0, 4.3)  {$+$};
+  \node[block, fill=normpur]  (ln2)  at (0, 5.5)  {LayerNorm};
+  \node[block, fill=hidgreen] (mlp)  at (0, 7.0)  {MLP: $d \to 4d \to d$\\(QuickGELU)};
+  \node[add]                  (add2) at (0, 8.3)  {$+$};
+  \node[block, fill=tokblue]  (out)  at (0, 9.5)  {Выход $\mathbf{x'} \in \mathbb{R}^{n \times d}$};
+
+  \draw[arr] (in) -- (ln1);
+  \draw[arr] (ln1) -- (attn);
+  \draw[arr] (attn) -- (add1);
+  \draw[arr] (add1) -- (ln2);
+  \draw[arr] (ln2) -- (mlp);
+  \draw[arr] (mlp) -- (add2);
+  \draw[arr] (add2) -- (out);
+
+  % Residual
+  \draw[arr, dashed, gray, thick]
+    (in.east) -- ++(2,0) |- (add1.east)
+    node[pos=0.25, right, font=\footnotesize, color=gray] {residual};
+  \draw[arr, dashed, gray, thick]
+    (add1.east) -- ++(2.5,0) |- (add2.east)
+    node[pos=0.25, right, font=\footnotesize, color=gray] {residual};
+
+  % Annotations
+  \node[font=\footnotesize, color=gray, anchor=west, text width=5cm]
+    at (4, 3.0) {$Q = xW^Q,\ K = xW^K,\ V = xW^V$\\[2pt]
+    $\mathrm{Attn} = \mathrm{softmax}\!\left(\dfrac{QK^\top}{\sqrt{d_k}}\right)\!V$\\[4pt]
+    12 голов $\times$ 64 dim = 768};
+
+  \node[font=\footnotesize, color=gray, anchor=west, text width=4.5cm]
+    at (4, 7.0) {Linear(768, 3072)\\
+    QuickGELU: $x \cdot \sigma(1.702x)$\\
+    Linear(3072, 768)};
+
+  \node[font=\footnotesize\bfseries, color=blue!50!black, anchor=west]
+    at (4, 0) {Pre-Norm (LN до attention, не после)};
+\end{tikzpicture}
+\end{center}
+
+\newpage
+
+% ================================================================
+%  СТРАНИЦА 3: Таблицы + формулы + сравнение
+% ================================================================
+
+\section*{Варианты моделей CLIP}
+
+\begin{center}
+\begin{tabular}{lcccccc}
+\toprule
+\textbf{Модель} & \textbf{Patch} & \textbf{Слоёв} & \textbf{Heads} & \textbf{Width} & \textbf{Params (vis.)} & \textbf{ImageNet ZS} \\
+\midrule
+ViT-B/32     & $32\!\times\!32$ & 12 & 12 & 768  & $\sim$86M  & 63.2\% \\
+ViT-B/16     & $16\!\times\!16$ & 12 & 12 & 768  & $\sim$86M  & 68.3\% \\
+ViT-L/14     & $14\!\times\!14$ & 24 & 16 & 1024 & $\sim$304M & 75.3\% \\
+\rowcolor{simgreen!30}
+ViT-L/14@336 & $14\!\times\!14$ & 24 & 16 & 1024 & $\sim$304M & \textbf{76.2\%} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\medskip
+
+\noindent\textbf{Текстовый энкодер} (для ViT-B/32): 12 слоёв, ширина 512, 8 голов,
+$\sim$63M параметров, vocab = 49\,408 (BPE), max\_length = 77.
+Каузальная маска (decoder-only, как GPT).
+
+
+\section*{Поток размерностей: Image Encoder}
+
+\[
+\underbrace{224\!\times\!224\!\times\!3}_{\text{RGB}}
+\xrightarrow{\text{Conv2d}(3,768,32,32)}
+\underbrace{[49, 768]}_{\text{49 патчей}}
+\xrightarrow{+[\mathrm{CLS}]+\mathrm{PE}}
+\underbrace{[50, 768]}_{\text{50 токенов}}
+\]
+\[
+\xrightarrow{12\times\text{Transformer}}
+[50, 768]
+\xrightarrow{[\mathrm{CLS}]}
+\underbrace{[768]}_{\text{вектор}}
+\xrightarrow{W_v}
+[512]
+\xrightarrow{\ell_2}
+\boxed{\mathbf{I_e} \in \mathbb{R}^{512}}
+\]
+
+
+\section*{Поток размерностей: Text Encoder}
+
+\[
+\text{<<A photo of a cat>>}
+\xrightarrow{\text{BPE}}
+\underbrace{[77]}_{\text{токены}}
+\xrightarrow{\text{Emb}+\text{PE}}
+\underbrace{[77, 512]}_{\text{эмбеддинги}}
+\]
+\[
+\xrightarrow{12\times\text{MaskedTransf.}}
+[77, 512]
+\xrightarrow{[\mathrm{EOS}]}
+\underbrace{[512]}_{\text{вектор}}
+\xrightarrow{W_t}
+[512]
+\xrightarrow{\ell_2}
+\boxed{\mathbf{T_e} \in \mathbb{R}^{512}}
+\]
+
+
+\section*{Контрастивный Loss (InfoNCE)}
+
+Батч из $N$ пар. Матрица сходства $N\times N$:
+
+\[
+\text{logits}_{ij} = \cos(\mathbf{I_e}^{(i)}, \mathbf{T_e}^{(j)}) \cdot \exp(\tau)
+\]
+
+\[
+\boxed{
+\mathcal{L} = \frac{1}{2}\left[
+  \underbrace{\mathrm{CE}(\text{logits}, \text{labels}, \text{rows})}_{\text{image} \to \text{text}}
+  + \underbrace{\mathrm{CE}(\text{logits}, \text{labels}, \text{cols})}_{\text{text} \to \text{image}}
+\right]
+}
+\]
+
+$\text{labels} = [0, 1, \ldots, N\!-\!1]$, \quad $\tau$ --- обучаемый скаляр.
+
+\bigskip
+
+\noindent\textbf{Псевдокод (из статьи):}
+\begin{verbatim}
+  I_f = image_encoder(I)           # [n, d_i]
+  T_f = text_encoder(T)            # [n, d_t]
+  I_e = l2_normalize(I_f @ W_i)    # [n, d_e]
+  T_e = l2_normalize(T_f @ W_t)    # [n, d_e]
+  logits = I_e @ T_e.T * exp(t)    # [n, n]
+  labels = arange(n)
+  loss_i = cross_entropy(logits, labels, axis=0)
+  loss_t = cross_entropy(logits, labels, axis=1)
+  loss   = (loss_i + loss_t) / 2
+\end{verbatim}
+
+
+\section*{CLIP vs SigLIP: отличие в Loss}
+
+\begin{center}
+\begin{tabular}{p{2.5cm}p{5.5cm}p{5.5cm}}
+\toprule
+& \textbf{CLIP (Softmax / InfoNCE)} & \textbf{SigLIP (Sigmoid)} \\
+\midrule
+\textbf{Формула} &
+  $\mathrm{CE}(\mathrm{softmax}(\text{logits}), \text{labels})$ &
+  $-\sum_{ij} \log \sigma(z_{ij} \cdot s_{ij})$ \\[6pt]
+\textbf{Нормализация} &
+  Глобальная (по всему батчу) &
+  Независимая (каждая пара) \\[6pt]
+\textbf{Батч} &
+  Нужен большой (32K) &
+  Работает при любых размерах \\[6pt]
+\textbf{ImageNet ZS} &
+  76.2\% (ViT-L/14@336) &
+  Превосходит CLIP \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent$z_{ij} = +1$ если пара совпадает, $-1$ иначе.\quad
+$s_{ij} = \tau \cdot \cos(\mathbf{I_e}^{(i)}, \mathbf{T_e}^{(j)}) + b$.
+
+\end{document}
